@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+	<meta charset="UTF-8">
+	<title>Web MIDI Arduino communication</title>
+</head>
+<body>
+
+	<script>
+    // R: http://www.onicos.com/staff/iz/formats/midi-event.html
+		// Tx: ErniW ;)
+
+    var uC_identifier = 'Arduino Micro';
+		var uC_deviceIdx = -1;
+		var theMidi;
+		var selectedDevice = {};
+		var outputs, inputs;
+
+		//Get MIDI devices
+		if (navigator.requestMIDIAccess) {
+		  console.log("requestMIDIAccess supported: MIDI STARTED");
+		    var success = function(MIDI){
+					theMidi = MIDI;
+		    	console.log(MIDI);
+          // build up list of available devices
+					var getDevices = function(devices){
+		    		var list = {};
+		    		for (var i = devices.next(), j=0; i && !i.done; i = devices.next(), j++) {
+		    			list[i.value.name] = i.value;
+							console.log('i.value.name: ', i.value.name, 'i.value: ', i.value);
+              // test presence of our uC
+							if(i.value.name === uC_identifier){
+								console.log('uC device found !');
+								uC_deviceIdx = j;
+							}
+		    		};
+		    		return list;
+		    	};
+
+					//Get the available devices.
+					outputs = getDevices(MIDI.outputs.values());
+					inputs = getDevices(MIDI.inputs.values());
+					console.log("Outputs:", outputs, "Inputs:", inputs);
+
+					// make sure we have the uC we're looking for
+					if(uC_deviceIdx === -1) {
+						alert('Desired uC not found !');
+						return; // no need to further do stuff: something went wrong ( uC we're looking for not recognized )
+					}
+
+					// get midi input & output devices corresponding to our uC
+					selectedDevice.output = outputs[uC_identifier];
+					selectedDevice.input = inputs[uC_identifier];
+					// start listening for inputs
+					selectedDevice.input.onmidimessage = addListener;
+					// add a selectable option of each device found
+					/*
+		    	for (devices in outputs){
+		    		var option = document.createElement("option");
+		    		option.text = outputs[devices].name;
+		    		document.getElementById('list').add(option);
+		    	};
+					*/
+					// ---- Tef Edit ----
+					// As of 25/01/2020, the current code 'works' when served locally or over https
+					// BUT we need to initiate the midi communication between browser & arduino by
+					// triggering the selection of the device
+					// -> observed while trying to re-call 'navigator.requestMIDIAccess().then(success, failure);'
+					// and when suddenly after selection of the 2nd <opt> in the <select#list> 'send' gave no further errors
+					//changeDevice(document.getElementById('list').children[0].text);
+//          changeDevice(uC_identifier);
+		    };
+
+		    var failure = function(){
+		    	console.error("MIDI error")
+		    };
+		    navigator.requestMIDIAccess().then(success, failure);
+		}
+
+		//Listen for received value from pin A0 and change input value
+		var addListener = function(receivedData){
+			//receivedData.data[1] contains pin index
+			document.getElementById('read').value = receivedData.data[2];
+		}
+
+		//Change MIDI device
+		var changeDevice = function(name){
+			//Merge input and output of same device into single object
+			selectedDevice.output = outputs[name];
+			selectedDevice.input = inputs[name];
+			//Start listening for received notes
+			selectedDevice.input.onmidimessage = addListener;
+		};
+
+		//General purpose MIDI note on and off trigger.
+		var noteOn = function(pitch, velocity){
+			selectedDevice.output.send([0x92, pitch, velocity]);
+		}
+		var noteOff = function(pitch, velocity){
+			selectedDevice.output.send([0x82, pitch, velocity]);
+		}
+
+		//Received note on and off event
+
+		//Change pin 9 value
+		var changePWM = function(value){
+			if (value <= 127) noteOn(9,value);
+			else noteOff(9, value-128);
+		};
+
+		// wrapper for cleaner abused-api ;p
+		var setPin = function(pinIdx, value){
+			if (value <= 127) noteOn(pinIdx, value);
+			else noteOff(pinIdx, value-128);
+		}
+
+	</script>
+
+	<!--HTML LAYOUT-->
+
+	<style>
+
+		body{
+			background: whitesmoke;
+		}
+
+		div{
+			width: 200px;
+			height: 200px;
+			margin: 200px auto;
+			background: white;
+			padding: 40px;
+			text-align: center;
+		}
+
+	</style>
+
+	<div>
+    <!--
+		<p>Select the device:</p>
+		<select id="list" onchange="changeDevice(this.value)"></select>
+	  -->
+
+		<p>Change LED brightness:</p>
+	  <!-- <input type="range" id="range" max="255" value="0" oninput="changePWM(this.value)"> -->
+		<input type="range" id="range" max="255" value="0" oninput="setPin(9, this.value)">
+		<p>Read the value:</p>
+		<input type="text" id="read" placeholder="Analog read value">
+	</div>
+
+</body>
+</html>
